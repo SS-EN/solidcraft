@@ -734,33 +734,39 @@ fn build_sketch_scene(app: &SolveApp, proj: &Proj) -> GpuScene {
     let s = &app.session;
     let st = s.world_state();
     let mut fill_budget = 131_072;
-    if app.ui.show_grid && !active_view(app).hide_grid {
+    let sketch_plane = solidcraft_engine::view::open_sketch_plane(s);
+    if sketch_plane.is_some() || (app.ui.show_grid && !active_view(app).hide_grid) {
         let (minor, major) = grid_step(app.cam.half_height());
         let ext = (app.cam.half_height() * 3.0 / major).ceil() * major;
-        // The ground plane: XY with Z up, XZ with Y up (laid out in the camera's Z-up frame), or
-        // the upright origin plane facing the view when the ground is seen edge-on.
-        let tf = app.cam.to_frame(app.cam.target);
-        // On the ground (XY) unless the Grid follows the view preference is on (#1470); then on
-        // the plane the last frame drew, so the choice is hysteretic near the thresholds (#1993).
-        let (u, v) = if app.preferences.grid_follows_view {
-            app.viewport.grid_plane.lock().map_or((Vec3::X, Vec3::Y), |mut last| {
-                *last = grid_plane(app.cam.to_frame(app.cam.back()), *last);
-                last.axes()
-            })
+        // An open sketch always has its grid on its own plane; otherwise the ground plane: XY with
+        // Z up, XZ with Y up (laid out in the camera's Z-up frame), or the upright origin plane
+        // facing the view when the ground is seen edge-on.
+        let (c, u, v, w3): (Vec3, Vec3, Vec3, Box<dyn Fn(Vec3) -> [f32; 3]>) = if let Some(pl) = &sketch_plane {
+            let (c, u, v) = solidcraft_engine::view::sketch_grid_frame(pl, app.cam.target, major);
+            (c, u, v, Box::new(|p| p.to_f32()))
         } else {
-            (Vec3::X, Vec3::Y)
+            let tf = app.cam.to_frame(app.cam.target);
+            // On the ground (XY) unless the Grid follows the view preference is on (#1470); then on
+            // the plane the last frame drew, so the choice is hysteretic near the thresholds (#1993).
+            let (u, v) = if app.preferences.grid_follows_view {
+                app.viewport.grid_plane.lock().map_or((Vec3::X, Vec3::Y), |mut last| {
+                    *last = grid_plane(app.cam.to_frame(app.cam.back()), *last);
+                    last.axes()
+                })
+            } else {
+                (Vec3::X, Vec3::Y)
+            };
+            let snap = |a: Vec3| a * ((tf.dot(a) / major).round() * major);
+            (snap(u) + snap(v), u, v, Box::new(|p| app.cam.from_frame(p).to_f32()))
         };
-        let snap = |a: Vec3| a * ((tf.dot(a) / major).round() * major);
-        let c = snap(u) + snap(v);
-        let w3 = |p: Vec3| app.cam.from_frame(p).to_f32();
         let n = ((ext / minor) as i64).clamp(1, 300);
         for i in -n..=n {
             let t = i as f64 * minor;
             let maj = (t / major).round() * major == t;
             let col = if maj { c4(tk.grid_major) } else { c4(tk.grid) };
-            let w = if maj { 1.0 } else { 0.7 };
-            sc.under_line(w3(c + u * t - v * ext), w3(c + u * t + v * ext), col, w);
-            sc.under_line(w3(c - u * ext + v * t), w3(c + u * ext + v * t), col, w);
+            let wd = if maj { 1.0 } else { 0.7 };
+            sc.under_line(w3(c + u * t - v * ext), w3(c + u * t + v * ext), col, wd);
+            sc.under_line(w3(c - u * ext + v * t), w3(c + u * ext + v * t), col, wd);
         }
     }
     for sid in visible_sketches(app) {
@@ -6297,6 +6303,29 @@ mod grid_plane_tests {
         app.cam.pitch = 0.3;
         let _ = build_sketch_scene(&app, &projection(&app, rect));
         assert_eq!(*app.viewport.grid_plane.lock().unwrap(), GridPlane::Ground, "a clear turn off the ground returns");
+    }
+
+    /// An open sketch always has its grid, on its own plane, whatever the Grid switch and the
+    /// follow-the-view preference say; outside a sketch the switch decides.
+    #[test]
+    fn an_open_sketch_always_shows_a_grid_on_its_plane() {
+        let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let mut app = SolveApp::new(solidcraft_engine::Session::default(), crate::Services::default());
+        app.ui.show_grid = false;
+        let grid = |app: &SolveApp| build_sketch_scene(app, &projection(app, rect)).under;
+        assert!(grid(&app).is_empty(), "no grid outside a sketch with the switch off");
+        app.run("sketch.create", json!({"plane": "XZ"})).unwrap();
+        for follows in [false, true] {
+            app.preferences.grid_follows_view = follows;
+            let under = grid(&app);
+            assert!(!under.is_empty(), "the open sketch shows a grid (follows the view: {follows})");
+            // Each line is 32 bytes: two f32 points, a colour and a width; the XZ plane is Y = 0.
+            let ys: Vec<f32> =
+                under.as_chunks::<32>().0.iter().flat_map(|l| [&l[4..8], &l[16..20]]).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+            assert!(ys.iter().all(|y| y.abs() < 1e-3), "the grid lies on the sketch plane");
+        }
+        app.ui.show_grid = true;
+        assert!(!grid(&app).is_empty());
     }
 
     /// A sketch is drawn in a parallel view even when the preference asks for perspective; the

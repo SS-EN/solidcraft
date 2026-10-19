@@ -59,6 +59,8 @@ pub mod i18n;
 #[cfg(test)]
 mod i18n_menu_tests;
 #[cfg(test)]
+mod i18n_painted_tests;
+#[cfg(test)]
 mod i18n_ui_tests;
 pub mod icon_svg;
 pub mod icons;
@@ -878,7 +880,7 @@ impl SolveApp {
         let _ = self.run(id, json!({}));
     }
 
-    /// Edit a feature the way Fusion does: sketches open in sketch mode; other features roll the
+    /// Edit a feature: sketches open in sketch mode; other features roll the
     /// timeline back to just before themselves and reopen their dialog, filled in.
     pub fn edit_feature(&mut self, id: u64) {
         use solidcraft_engine::doc::FeatureKind;
@@ -906,7 +908,7 @@ impl SolveApp {
         }
     }
 
-    /// Edit a sketch the way Fusion does: roll the timeline back to just after it (so later
+    /// Edit a sketch: roll the timeline back to just after it (so later
     /// features don't hide it), turn the camera to face it, and remember both so Finish Sketch
     /// puts them back. Editing the sketch that is already open does nothing; editing another one
     /// finishes the current sketch first, so edit sessions never nest.

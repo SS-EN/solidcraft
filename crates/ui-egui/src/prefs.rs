@@ -1,4 +1,4 @@
-//! Preferences, one dialog in the spirit of Fusion's, opened from the gear at the top right of the
+//! Preferences, one dialog, opened from the gear at the top right of the
 //! window, File › Preferences or Ctrl+, (Cmd+, on macOS): General (theme, UI scale, units of new
 //! designs, autosave, display precision, timeline layout, the agent cursor), Navigation (mouse presets, zoom
 //! direction, zoom to the cursor, orbit centre, Look At animation), Keyboard Shortcuts (search,
