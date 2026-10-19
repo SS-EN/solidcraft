@@ -1237,7 +1237,16 @@ fn interference(s: &mut Session, p: &Value) -> Result<Value> {
         st.bodies.iter().filter(|b| want.is_empty() || want.contains(&b.name)).filter(|b| !b.body.is_mesh()).collect();
     // Prune by bounding boxes first (sort and sweep), so the cost follows the pairs that can
     // touch rather than the square of the body count.
-    let boxes: Vec<Aabb3> = bodies.iter().map(|b| b.mesh().bounds()).collect();
+    // Each mesh lies within its chord of the faces, inside a round one: grown by that, the boxes
+    // of bodies a hundredth of a millimetre into each other still meet (an arm's round end into a
+    // rounded rim, its facets clear of the rim's).
+    let boxes: Vec<Aabb3> = bodies
+        .iter()
+        .map(|b| {
+            let (bx, g) = (b.mesh().bounds(), 2.0 * b.display_tol());
+            if bx.is_empty() { bx } else { Aabb3 { min: bx.min - Vec3::new(g, g, g), max: bx.max + Vec3::new(g, g, g) } }
+        })
+        .collect();
     let (pairs, skipped) = overlapping_pairs(&boxes, MAX_INTERFERENCE_PAIRS);
     let (mut hits, mut unchecked) = (Vec::new(), Vec::new());
     for (i, j) in pairs {

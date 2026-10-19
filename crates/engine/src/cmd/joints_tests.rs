@@ -1453,6 +1453,36 @@ mod cam;
 #[path = "motion_analysis_tests.rs"]
 mod motion_analysis;
 
+/// A ring with rounded rims and an arm whose round end reaches 0.01 mm into the rim, or stops
+/// 0.01 mm short of it: the overlap is found (the arm's facets are clear of the rim's, so the
+/// boxes of the meshes alone kept the pair from being checked), and the gap is clear, not
+/// unchecked.
+#[test]
+fn interference_of_an_arm_a_hundredth_into_or_off_a_rounded_rim() {
+    for gap in [-0.01, 0.01] {
+        let mut s = Session::default();
+        run(&mut s, "solid.cylinder", json!({"radius": 30, "height": 6, "body_name": "Ring"}));
+        run(&mut s, "solid.cylinder", json!({"radius": 24, "height": 6, "operation": "cut", "targets": ["Ring"]}));
+        run(&mut s, "solid.fillet", json!({"edges": [[30, 0, 6], [30, 0, 0]], "radius": 2}));
+        let cx = 35.0 + gap;
+        run(&mut s, "sketch.create", json!({"plane": "XY"}));
+        run(&mut s, "sketch.line", json!({"points": [[cx, 5], [cx + 40.0, 5], [cx + 40.0, -5], [cx, -5]], "closed": false}));
+        run(&mut s, "sketch.arc.three_point", json!({"start": [cx, -5], "end": [cx, 5], "through": [cx - 5.0, 0]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": 6, "operation": "new", "body_name": "Arm"}));
+        let i = run(&mut s, "inspect.interference", json!({"bodies": ["Ring", "Arm"]}));
+        assert_eq!(i["unchecked"].as_array().map(Vec::len), Some(0), "{gap}: {i}");
+        if gap > 0.0 {
+            assert_eq!(i["count"], 0, "{gap}: {i}");
+            continue;
+        }
+        assert_eq!(i["count"], 1, "{gap}: {i}");
+        // The lens the end makes with the rim's circle at each height, summed: 0.00872 mm³.
+        let got = i["interferences"][0]["volume_mm3"].as_f64().unwrap_or(0.0);
+        assert!((got - 0.00872).abs() < 0.0005, "{gap}: {got}: {i}");
+    }
+}
+
 /// A pin through a hole of its own radius whose axis is a hair off the hole's (parts placed from
 /// rounded coordinates): the walls are all but tangent along two lines, which the boolean can't
 /// intersect. Each offset gets a checked answer: clear on the axis and within the kernel's
