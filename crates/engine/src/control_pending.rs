@@ -27,7 +27,10 @@ pub fn command_reads_only(id: &str) -> bool {
         || id.starts_with("model.")
         || id.ends_with(".inspect")
         || id.ends_with(".list")
-        || matches!(id, "document.inspect" | "engine.commands" | "render.status" | "render.backends" | "render.settings.get" | "file.slicers")
+        || matches!(
+            id,
+            "document.inspect" | "engine.commands" | "selection.get" | "render.status" | "render.backends" | "render.settings.get" | "file.slicers"
+        )
 }
 
 /// Whether the request `method` with `params` only reads (the design, the window or the
@@ -64,6 +67,7 @@ mod tests {
             ("engine.execute", json!({"command": "sketch.inspect"})),
             ("engine.execute", json!({"command": "inspect.measure"})),
             ("engine.execute", json!({"command": "model.edges", "params": {"body": "Body1"}})),
+            ("engine.execute", json!({"command": "selection.get"})),
         ] {
             assert!(reads_only(m, &p), "{m} {p}");
         }

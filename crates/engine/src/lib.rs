@@ -1044,6 +1044,8 @@ mod profile_fallback_tests;
 #[cfg(test)]
 mod profile_refs_tests;
 #[cfg(test)]
+mod selection_get_tests;
+#[cfg(test)]
 mod sketch_edit_removed_tests;
 #[cfg(test)]
 mod split_face_tests;

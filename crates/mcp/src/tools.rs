@@ -129,7 +129,8 @@ pub fn tool_definitions() -> Vec<Value> {
             "Inspect the design",
             "The whole design: user parameters (expression, value, errors), the timeline (features with type, suppressed, \
              rolled back, error, warning, timing), bodies (volume, area, centre of mass, bounding box, face/edge/vertex \
-             counts), sketches, the active sketch, selection and undo depth. Sketches are summarised by default (id, name, \
+             counts), sketches, the active sketch, selection and undo depth (for just the selection, resolved, use execute \
+             selection.get). Sketches are summarised by default (id, name, \
              plane, counts of points, curves, constraints and profiles, degrees of freedom, solve status); their full contents \
              (curves with ids and coordinates, points, constraints, profiles) only for the sketches named in `sketches`, or \
              all with `sketches: true` (large: a 720-point sketch is some 200 KB). Arguments: measure, sketches, bodies.",
