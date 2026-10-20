@@ -804,6 +804,7 @@ fn hostile_params_never_panic() {
         "kind",
         "prefix",
         "orientation",
+        "seam",
         "twist",
         "scale",
         "continuity",

@@ -301,8 +301,8 @@ impl SweepOrientation {
     }
 }
 
-/// A sweep's guide rail: a chain of curves of a sketch, followed from the end nearest the path's
-/// start.
+/// A sweep's or a loft's guide rail: a chain of curves of a sketch, followed from the end nearest
+/// the path's start (the loft's first section).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, solidcraft_derive::Walk)]
 pub struct SweepRail {
     pub sketch: SketchId,
@@ -742,6 +742,12 @@ pub enum FeatureKind {
         operation: Operation,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<BodyName>,
+        /// Guide rails (one or two) the loft follows between its sections.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        rails: Vec<SweepRail>,
+        /// How the rails reshape the sections between.
+        #[serde(default, skip_serializing_if = "RailFit::is_scale")]
+        rail_fit: RailFit,
     },
     /// Sweep profiles along a chain of sketch curves.
     Sweep {
@@ -1374,6 +1380,12 @@ pub enum FeatureKind {
         continuity: [Continuity; 2],
         #[serde(default, skip_serializing_if = "loft_crown_is_plain")]
         crown: [f64; 2],
+        /// Guide rails (one or two) the loft follows between its sections.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        rails: Vec<SweepRail>,
+        /// How the rails reshape the sections between.
+        #[serde(default, skip_serializing_if = "RailFit::is_scale")]
+        rail_fit: RailFit,
     },
     /// The faces at `faces` copied out at a signed `distance` along their normals as a new
     /// surface body (0 copies them); `chain` takes each pick's whole smooth chain of faces;
@@ -1443,6 +1455,11 @@ pub enum FeatureKind {
         /// Points the blend leaves towards, when the faces at the picks do not say: [from, to].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         align: Option<[Position; 2]>,
+        /// Where each chain's stations start, when two closed chains should not pair the way
+        /// that keeps the blend from twisting: a point on each chain, [from, to]. An open chain
+        /// starts at the end nearer its point.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seam: Option<[Position; 2]>,
         /// Sew the blend onto its two bodies where the boundaries meet.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         stitch: bool,
@@ -3356,13 +3373,35 @@ impl Document {
         stored: &solidcraft_sketch::DrivingValues,
         moved_from: Option<&Sketch>,
     ) -> Result<solidcraft_sketch::SolveReport> {
+        self.solve_sketch_with_analysis(vals, sk, stored, moved_from, solidcraft_sketch::Analysis::Full)
+    }
+
+    /// [`Self::solve_sketch`] with the diagnostics needed by an internal edit. Parameter
+    /// application, continuation and offset refreshes run regardless of the requested level.
+    /// Model evaluation uses `solve_sketch` so its published report always has full diagnostics.
+    pub fn solve_sketch_with_analysis(
+        &self,
+        vals: &std::collections::BTreeMap<String, expr::Value>,
+        sk: &mut Sketch,
+        stored: &solidcraft_sketch::DrivingValues,
+        moved_from: Option<&Sketch>,
+        analysis: solidcraft_sketch::Analysis,
+    ) -> Result<solidcraft_sketch::SolveReport> {
         self.apply_dimension_values(vals, sk)?;
         let was = |sk: &Sketch| moved_from.and_then(|from| sk.positions_in(from));
-        let mut report = solidcraft_sketch::solve_after_edit(sk, stored, was(sk).as_deref());
-        if !sk.offsets.is_empty() || !sk.freeform_offsets.is_empty() {
+        let offsets = !sk.offsets.is_empty() || !sk.freeform_offsets.is_empty();
+        // Offsets always require another solve after refresh. Only that last report is
+        // published; the first report only decides which state the second solve starts from.
+        let first_analysis = if offsets { solidcraft_sketch::Analysis::StatusOnly } else { analysis };
+        let mut report = solidcraft_sketch::solve_after_edit_with_analysis(sk, stored, was(sk).as_deref(), first_analysis);
+        if offsets {
             // Source dimensions may have moved curves during the solve.
             sk.refresh_offsets()?;
-            report = if report.ok() { solidcraft_sketch::solve(sk) } else { solidcraft_sketch::solve_after_edit(sk, stored, was(sk).as_deref()) };
+            report = if report.ok() {
+                solidcraft_sketch::solve_with(sk, &solidcraft_sketch::Hold::default(), None, analysis, None)
+            } else {
+                solidcraft_sketch::solve_after_edit_with_analysis(sk, stored, was(sk).as_deref(), analysis)
+            };
         }
         Ok(report)
     }

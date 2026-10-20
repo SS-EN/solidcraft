@@ -29,7 +29,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("sketch.create", "Create Sketch", create_sketch)
         .at("SOLID", "CREATE")
         .icon("sketch")
-        .params("plane: XY|XZ|YZ | construction plane name or id | {origin, x_dir, y_dir} | {face: [world x,y,z], body?: exact world body, index?: face index, path?: complete occurrence ids, fixed?: bool}; new face attachments require a unique certified source (a flat face of a sheet metal body attaches to its panel instead, in the flat pattern's coordinates), fixed:true explicitly freezes the selected plane; offset?: expr, flip?: bool | \"x\" | \"y\" (not on a face: sketch the plane from its other side, so the normal and the default extrude direction are reversed; a half turn about the plane's own x or y axis, true picks the one keeping the sketch's y axis upward; offset still moves along the unflipped normal), project_edges?: bool, name?"),
+        .params("plane: XY|XZ|YZ | construction plane name or id | {origin?: [x,y,z] numbers in mm, default [0,0,0] (not an expression), x_dir, y_dir} | {face: [world x,y,z], body?: exact world body, index?: face index, path?: complete occurrence ids, fixed?: bool}; new face attachments require a unique certified source (a flat face of a sheet metal body attaches to its panel instead, in the flat pattern's coordinates), fixed:true explicitly freezes the selected plane; offset?: expr, flip?: bool | \"x\" | \"y\" (not on a face: sketch the plane from its other side, so the normal and the default extrude direction are reversed; a half turn about the plane's own x or y axis, true picks the one keeping the sketch's y axis upward; offset still moves along the unflipped normal), project_edges?: bool, name?"),
     CommandSpec::new("sketch.edit", "Edit Sketch", edit_sketch).noundo().icon("sketch").params("sketch: id or name"),
     CommandSpec::new("sketch.finish", "Finish Sketch", finish_sketch).at("SKETCH", "FINISH SKETCH").icon("finish").enabled(in_sketch).noundo(),
     CommandSpec::new("sketch.line", "Line", draw_line)
@@ -111,7 +111,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .params(concat!("p0, p1: overall ends, width", connect_doc!(), created_doc!())),
     CommandSpec::new("sketch.point", "Point", draw_point).at("SKETCH", "CREATE").icon("point").enabled(in_sketch).params(concat!("point: [x,y] (each a number or an expression over the design's parameters: the point is then fixed where it comes to and follows them), id?", connect_doc!(), created_doc!())),
     CommandSpec::new("sketch.dimension", "Sketch Dimension", dimension).at("SKETCH", "CREATE").icon("dimension").key("D").enabled(in_sketch).params(
-        "entities: [refs], type?: auto|distance|horizontal|vertical|length|radius|diameter|angle, value?: number or expression (default: current; a bare number is in the design's units, e.g. 2 means 2 in in an inch design; give a unit such as \"50 mm\" to override); text_at?: [x, y]. Two points or a line off the axes: with auto, text_at across from them is the distance between them, above or below them horizontal, beside them vertical. Two lines: the angle between them (acute, or 180° − it when the value is nearer that) unless text_at picks a sector. A dimension the sketch already determines is refused (naming what determines it); if_redundant?: \"driven\" places it as a driven (reference) dimension instead. scale_sketch?: bool (the dimension tool sends true): when this is the sketch's first length dimension and nothing in the sketch fixes a size (no other driving length dimension, nothing fixed or projected), the whole sketch scales about its origin to the value instead of distorting. Returns measured in unit (mm or deg), and scaled: the factor when the sketch was scaled",
+        "entities: [refs], type?: auto|distance|horizontal|vertical|length|radius|diameter|angle, value?: number or expression (default: current; a bare number is in the design's units, e.g. 2 means 2 in in an inch design; give a unit such as \"50 mm\" to override); text_at?: [x, y]. Two points or a line off the axes: with auto, text_at across from them is the distance between them, above or below them horizontal, beside them vertical. Two lines: the angle between them (acute, or 180° − it when the value is nearer that) unless text_at picks a sector. A line and a circle or arc: the distance from the line to its edge (the gap, or how far the edge reaches past a line that cuts it; 0 is tangent); dimension the centre point for the distance to the centre. A dimension the sketch already determines is refused (naming what determines it); if_redundant?: \"driven\" places it as a driven (reference) dimension instead. scale_sketch?: bool (the dimension tool sends true): when this is the sketch's first length dimension and nothing in the sketch fixes a size (no other driving length dimension, nothing fixed or projected), the whole sketch scales about its origin to the value instead of distorting. Returns measured in unit (mm or deg), and scaled: the factor when the sketch was scaled",
     ),
     CommandSpec::new("sketch.constraint.horizontal_vertical", "Horizontal/Vertical", c_horizontal_vertical)
         .at("SKETCH", "CONSTRAINTS")
@@ -179,7 +179,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .params("entities: [curve, point or constraint ids]"),
     CommandSpec::new("sketch.move_point", "Drag Sketch Point", move_point).icon("sketch_move").enabled(in_sketch).params("point: ref, to: [x,y]"),
     CommandSpec::new("sketch.drag", "Drag Sketch Geometry", drag).icon("sketch_move").enabled(in_sketch).live(drag_live).params(
-        "entity: point or curve, from: [x,y] where it was grabbed, to: [x,y], live?: bool: a point moves toward `to` within the design constraints; when exact cursor placement is impossible, bounded feasible steps minimize cursor distance while keeping design constraints mandatory. A line (spline, conic) slides by to - from; a circle or arc grabbed on its edge takes the radius to `to`. `with?`: [point or curve ids]: the rest of a selection dragged by `entity`, which all slides by to - from as one (circles keep their radii). Long moves use continuation to retain the solution branch, and a step that would sweep an arc through its start is rejected. Returns `reached`: progress along the requested move (0..1; feasible point motion projects its actual displacement onto that move), and `at`: where the grabbed spot went (`from` moved as the dragged points did), the `from` of the next move. `live: true` solves the sketch and leaves later features stale until `sketch.drag_end` or a command that reads the model; `dof` is then the one from before the drag",
+        "entity: point or curve, from: [x,y] where it was grabbed, to: [x,y], live?: bool: points and the material point grabbed on a line move toward `to` within the design constraints. When exact placement is impossible, bounded feasible steps minimize cursor distance. Splines slide by to - from; a circle or arc grabbed on its edge takes the radius to `to`. `with?`: [point or curve ids] moves the rest of a selection with the entity as one translation (circles keep their radii). Long moves retain the solution branch; arcs cannot sweep through their starts. Returns `reached`: progress projected onto the requested move (0..1), `at`: the grabbed position for the next frame, and `retry`: budget-limited progress can continue in another frame. `live: true` shares a work budget across held-solve decomposition and cursor correction; ordinary recovery and the final model evaluation retain their existing limits, not a wall-clock deadline. Later features stay stale until `sketch.drag_end`; `dof` stays from before the drag",
     ),
     CommandSpec::new("sketch.drag_end", "End Sketch Drag", drag_end).icon("sketch_move").enabled(in_sketch).doc_only().params(
         "constraint?: {command: a sketch.constraint.* id, params}: ends a drag made of `sketch.drag` `live: true` frames: adds the constraint it let go on (not kept if it over-constrains the sketch), then evaluates the whole model once; returns the constraint's result and the sketch's solved state and degrees of freedom",
@@ -230,7 +230,7 @@ pub(super) fn edit<T>(
     f: impl FnOnce(&mut Sketch, &mut solidcraft_doc::Document) -> Result<T>,
 ) -> Result<(T, Value)> {
     let id = target_sketch(s, p, cmd)?;
-    let (out, rep) = edit_solved(s, id, strict, |sk, doc| Ok((f(sk, doc)?, Left::Unsolved)))?;
+    let (out, rep) = edit_solved(s, id, strict, Analysis::Freedom, |sk, doc| Ok((f(sk, doc)?, Left::Unsolved)))?;
     Ok((out, rep.map(|rep| report_json(&rep)).unwrap_or(Value::Null)))
 }
 
@@ -263,10 +263,13 @@ impl Left {
 /// `edit` of sketch `id` for a step that may solve the sketch itself: when it returns
 /// [`Left::Solved`] (and offsets need not be recomputed) the sketch is not solved again and the
 /// report is `None`.
+/// `analysis` must be `Full` when the report is published without a model evaluation (a live
+/// drag); command JSON only consumes freedom, and its later model evaluation publishes a full report.
 pub(super) fn edit_solved<T>(
     s: &mut Session,
     id: u64,
     strict: bool,
+    analysis: Analysis,
     f: impl FnOnce(&mut Sketch, &mut solidcraft_doc::Document) -> Result<(T, Left)>,
 ) -> Result<(T, Option<SolveReport>)> {
     let mut doc = (*s.doc).clone();
@@ -287,10 +290,11 @@ pub(super) fn edit_solved<T>(
             doc.apply_dimension_values(&doc.param_values().0, &mut sk)?;
             sk.refresh_offsets()?;
             let unsolved = sk.clone();
-            let mut rep = counted_solve(&mut sk, &Hold::default(), Some(&reference), Analysis::Full, None);
+            let first_analysis = if offsets { Analysis::StatusOnly } else { analysis };
+            let mut rep = counted_solve(&mut sk, &Hold::default(), Some(&reference), first_analysis, None);
             if offsets {
                 sk.refresh_offsets()?;
-                rep = counted_solve(&mut sk, &Hold::default(), Some(&reference), Analysis::Full, None);
+                rep = counted_solve(&mut sk, &Hold::default(), Some(&reference), analysis, None);
             }
             Some(settle(strict, rep, &mut sk, unsolved)?)
         }
@@ -300,8 +304,8 @@ pub(super) fn edit_solved<T>(
             sk.refresh_offsets()?;
             let unsolved = sk.clone();
             #[cfg(test)]
-            solve_counts::record(Analysis::Full);
-            let rep = doc.solve_sketch(&vals, &mut sk, &stored, None)?;
+            solve_counts::record(analysis);
+            let rep = doc.solve_sketch_with_analysis(&vals, &mut sk, &stored, None, analysis)?;
             Some(settle(strict, rep, &mut sk, unsolved)?)
         }
     };
@@ -343,7 +347,7 @@ pub(super) fn counted_solve(
 pub(super) fn solve_current(sk: &mut Sketch, doc: &solidcraft_doc::Document) -> Result<SolveReport> {
     let stored = sk.driving_values();
     let (values, _) = doc.param_values();
-    Ok(doc.solve_sketch(&values, sk, &stored, None)?)
+    Ok(doc.solve_sketch_with_analysis(&values, sk, &stored, None, Analysis::Freedom)?)
 }
 
 /// Solves run on this thread by [`counted_solve`] and the edit's own solve: (all of them, those
@@ -361,7 +365,7 @@ pub(super) mod solve_counts {
     pub fn record(analysis: Analysis) {
         COUNTS.with(|c| {
             let (n, full) = c.get();
-            c.set((n + 1, full + usize::from(analysis == Analysis::Full)));
+            c.set((n + 1, full + usize::from(analysis != Analysis::StatusOnly)));
         });
     }
 
@@ -622,7 +626,13 @@ pub(super) fn plane_ref(s: &Session, p: &Value, cmd: &str) -> Result<PlaneRef> {
             if o.contains_key("face") {
                 face::capture(s, v, cmd)?
             } else {
-                let origin = v.get("origin").and_then(vec3).unwrap_or(Vec3::ZERO);
+                // A missing origin is the world origin; one that is given but is not three numbers
+                // (an expression, a number with a unit) is an error, not a silent [0, 0, 0].
+                let origin = match v.get("origin") {
+                    None | Some(Value::Null) => Vec3::ZERO,
+                    Some(o) => vec3(o)
+                        .ok_or_else(|| bad(cmd, "plane `origin` must be three numbers [x, y, z] in mm (expressions are not evaluated here)"))?,
+                };
                 let x = v.get("x_dir").and_then(vec3).ok_or_else(|| bad(cmd, "plane needs x_dir"))?;
                 let y = v.get("y_dir").and_then(vec3).ok_or_else(|| bad(cmd, "plane needs y_dir"))?;
                 PlaneRef::Custom { plane: Plane::new(origin, x, y).ok_or_else(|| bad(cmd, "degenerate plane"))? }
@@ -1515,7 +1525,7 @@ pub(super) fn apply_in_order(sk: &mut Sketch, rep: &SolveReport, first: &[Ent], 
             driven: false,
             text: None,
         }));
-        let ok = solve_with(&mut trial, &h, None, Analysis::Full, None).ok();
+        let ok = solve_with(&mut trial, &h, None, Analysis::StatusOnly, None).ok();
         trial.constraints.retain(|c| c.id != TEMP);
         if ok && !collapsed(sk, &trial) {
             *sk = trial;
@@ -1525,7 +1535,7 @@ pub(super) fn apply_in_order(sk: &mut Sketch, rep: &SolveReport, first: &[Ent], 
     // Both could move but holding either one leads nowhere: solve as usual.
     if !first_locked && !second_locked {
         let mut trial = sk.clone();
-        if solve(&mut trial).ok() {
+        if solve_with(&mut trial, &Hold::default(), None, Analysis::StatusOnly, None).ok() {
             *sk = trial;
             return Ok(());
         }
@@ -1535,7 +1545,7 @@ pub(super) fn apply_in_order(sk: &mut Sketch, rep: &SolveReport, first: &[Ent], 
 
 /// Degrees of freedom of a sketch as it is.
 pub(super) fn dof_now(sk: &Sketch) -> usize {
-    solve(&mut sk.clone()).dof
+    solve_with(&mut sk.clone(), &Hold::default(), None, Analysis::Freedom, None).dof
 }
 
 /// A constraint just added that removes no degree of freedom (`before` → the edit's `info`) is
@@ -1976,6 +1986,7 @@ fn dimension(s: &mut Session, p: &Value) -> Result<Value> {
         };
         let is_line = |c: usize| matches!(sk.curves.get(c).map(|c| &c.kind), Some(CurveKind::Line { .. }));
         let is_circle = |c: usize| matches!(sk.curves.get(c).map(|c| &c.kind), Some(CurveKind::Circle { .. }));
+        let is_round = |c: usize| matches!(sk.curves.get(c).map(|c| &c.kind), Some(CurveKind::Circle { .. } | CurveKind::Arc { .. }));
         // The other reading of an angle between two lines (see below).
         let mut alt: Option<(ConstraintKind, f64)> = None;
         let (mut k, mut cur): (ConstraintKind, f64) = match (e0, e1) {
@@ -2084,6 +2095,16 @@ fn dimension(s: &mut Session, p: &Value) -> Result<Value> {
                         }
                     }
                 }
+            }
+            // A line and a circle or arc: the distance from the line to its edge (#1803).
+            ((None, Some(l)), Some((None, Some(c)))) | ((None, Some(c)), Some((None, Some(l)))) if is_line(l) && is_round(c) => {
+                let (a, b) = line_pts(sk, l).unwrap_or_default();
+                let (centre, r) = sk.center(c).zip(sk.radius(c)).ok_or_else(|| bad(cmd, "cannot dimension that curve"))?;
+                let d = (b - a).normalized().map(|u| u.cross(centre - a).abs()).ok_or_else(|| bad(cmd, "that line has no length"))?;
+                // A line that cuts the circle measures how far its edge reaches past the line.
+                let inside = d < r;
+                let gap = (d - r).abs();
+                (ConstraintKind::LineCircleDistance { l, c, value: gap, inside }, gap)
             }
             _ => return Err(bad(cmd, "cannot dimension that combination of entities")),
         };
@@ -2395,7 +2416,7 @@ fn move_point(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "sketch.move_point";
     let to = req_vec2(cmd, p, "to")?;
     let id = target_sketch(s, p, cmd)?;
-    let (_, rep) = edit_solved(s, id, false, |sk, _| {
+    let (_, rep) = edit_solved(s, id, false, Analysis::Freedom, |sk, _| {
         let q = point_ref(sk, p.get("point"), cmd, "point")?;
         Ok(((), drag_entity(sk, Ent::Point(q), &[], to, to, false).1.solve_again()))
     })?;
@@ -2421,7 +2442,8 @@ fn drag_frame(s: &mut Session, p: &Value, live: bool) -> Result<(Value, Option<c
     let id = target_sketch(s, p, cmd)?;
     // The sketch's report as last evaluated: a live frame keeps its degrees of freedom.
     let last = s.model.result(id).and_then(|r| r.state.sketch(id)).map(|ss| ss.report.clone());
-    let (d, rep) = edit_solved(s, id, false, |sk, doc| {
+    let analysis = if live { Analysis::Full } else { Analysis::Freedom };
+    let (d, rep) = edit_solved(s, id, false, analysis, |sk, doc| {
         let r = p.get("entity").and_then(Value::as_str).ok_or_else(|| bad(cmd, "`entity` must be a sketch point or curve"))?;
         let e = ent(sk, r).ok_or_else(|| bad(cmd, format!("unknown sketch entity `{r}`")))?;
         let with = match p.get("with") {
@@ -2442,7 +2464,7 @@ fn drag_frame(s: &mut Session, p: &Value, live: bool) -> Result<(Value, Option<c
         if let Some(link) = super::sketch_create::text_link(sk, r).map(str::to_owned) {
             let moving = sk.link_points(&link).into_iter().filter_map(|i| sk.point(i).map(|p| (i, p))).collect();
             super::sketch_create::move_text(sk, &link, to - from, 0.0, Vec2::ZERO, false)?;
-            return Ok((drag::Dragged { reached: 1.0, moving }, Left::Unsolved));
+            return Ok((drag::Dragged { reached: 1.0, moving, ..Default::default() }, Left::Unsolved));
         }
         // The held solves work on the dimensions' current values (a solved step applies them).
         doc.apply_dimension_values(&doc.param_values().0, sk)?;
@@ -2451,13 +2473,12 @@ fn drag_frame(s: &mut Session, p: &Value, live: bool) -> Result<(Value, Option<c
         // its degrees of freedom.
         Ok((d, if live && last.is_some() { left } else { left.solve_again() }))
     })?;
-    // Where the grabbed spot went: `from` moved as the dragged points did on average (with the
-    // whole step when it followed; otherwise as the sketch's own solve left them).
+    // Lines retain the grabbed material point through rotation. Other entities report the
+    // average displacement of their moving points, as before.
     let sk = s.doc.sketch(id)?;
-    let moves: Vec<Vec2> = d.moving.iter().filter_map(|&(q, was)| Some(sk.point(q)? - was)).collect();
-    let at = from + moves.iter().fold(Vec2::ZERO, |a, m| a + *m) * (1.0 / moves.len().max(1) as f64);
+    let at = d.at(sk, from);
     let rep = rep.or_else(|| last.map(|last| SolveReport { status: solidcraft_sketch::SolveStatus::Solved, failing: Vec::new(), ..last }));
-    let out = json!({"sketch": rep.as_ref().map(report_json), "reached": d.reached, "at": [at.x, at.y]});
+    let out = json!({"sketch": rep.as_ref().map(report_json), "reached": d.reached, "at": [at.x, at.y], "retry": d.retry});
     Ok((out, rep.filter(|_| live).map(|report| crate::LiveEdit { sketch: id, report })))
 }
 
@@ -2597,6 +2618,9 @@ mod ids_tests;
 #[cfg(test)]
 #[path = "sketch_infinite_tests.rs"]
 mod infinite_tests;
+#[cfg(test)]
+#[path = "sketch_line_circle_tests.rs"]
+mod line_circle_tests;
 #[cfg(test)]
 #[path = "sketch_point_expr_tests.rs"]
 mod point_expr_tests;

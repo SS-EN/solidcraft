@@ -150,6 +150,18 @@ fn tangent_chains_follow_smooth_edges() {
     assert_eq!(c, vec![0, 1]);
     assert_eq!(m.tangent_chain(2, 5f64.to_radians()), vec![2]);
     assert_eq!(m.face_edges(1), vec![1, 2]);
+    // A smooth seam where two faces share the same normal along the edge is not a corner to round,
+    // so tangent chaining stops at it.
+    let seam = Mesh {
+        positions: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0), Vec3::new(20.0, 0.0, 0.0), Vec3::new(15.0, 5.0, 0.0)],
+        normals: vec![Vec3::Z; 4],
+        triangles: vec![[0, 1, 3], [1, 2, 3], [1, 2, 3]],
+        tri_face: vec![0, 1, 2],
+        edges: vec![vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 0.0, 0.0)], vec![Vec3::new(10.0, 0.0, 0.0), Vec3::new(20.0, 0.0, 0.0)]],
+        edge_faces: vec![vec![0], vec![1, 2]],
+        ..Default::default()
+    };
+    assert_eq!(seam.tangent_chain(0, 5f64.to_radians()), vec![0]);
 }
 
 #[test]
@@ -729,4 +741,19 @@ mod blend {
         let d = flat.derivatives(0.0, 1).unwrap();
         assert_eq!(d[0], Vec2::ZERO);
     }
+}
+
+#[test]
+fn a_box_from_points_holds_them_and_grows() {
+    let b: Aabb3 = [Vec3::new(1.0, 2.0, 3.0), Vec3::new(-1.0, 0.0, 5.0), Vec3::new(f64::INFINITY, 0.0, 0.0)].into_iter().collect();
+    assert_eq!((b.min, b.max), (Vec3::new(-1.0, 0.0, 3.0), Vec3::new(1.0, 2.0, 5.0)), "the infinite point is skipped");
+    assert!(b.contains(Vec3::new(0.0, 1.0, 4.0)) && !b.contains(Vec3::new(0.0, 1.0, 6.0)));
+    assert!(!b.contains(Vec3::new(f64::NAN, 1.0, 4.0)));
+    assert!(b.inflated(1.0).contains(Vec3::new(0.0, 1.0, 6.0)));
+    assert!(Aabb3::EMPTY.inflated(1e9).is_empty() && !Aabb3::EMPTY.contains(Vec3::ZERO));
+    let far = Aabb3 { min: Vec3::new(2.0, 0.0, 3.0), max: Vec3::new(3.0, 1.0, 4.0) };
+    assert!(!b.meets(&far) && b.inflated(1.0).meets(&far) && !b.meets(&Aabb3::EMPTY));
+    let both = b.intersection(&b.inflated(1.0).intersection(&Aabb3 { min: Vec3::new(0.0, 1.0, 4.0), max: Vec3::new(9.0, 9.0, 9.0) }));
+    assert_eq!((both.min, both.max), (Vec3::new(0.0, 1.0, 4.0), Vec3::new(1.0, 2.0, 5.0)));
+    assert!(b.intersection(&far).is_empty());
 }
