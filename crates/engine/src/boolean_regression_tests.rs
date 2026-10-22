@@ -1223,3 +1223,21 @@ fn extrude_cut_into_a_rounded_block_top() {
     let v = before - volume(&cut, "Body1");
     assert!((v - taken).abs() < 0.05, "took {v}, expected {taken}");
 }
+
+/// A rod intersected with a rod of its radius on its axis that overlaps it by 8 mm (#1865): the
+/// two round walls lie on each other there, which the general boolean can't intersect, so the
+/// feature failed. It now keeps the 8 mm both share, a round wall and two caps, exactly.
+#[test]
+fn rods_on_one_cylinder_intersect_exactly() {
+    let mut s = Session::default();
+    s.execute("solid.cylinder", &json!({"radius": 25.6, "height": 30, "body_name": "Rod"})).unwrap();
+    s.execute("solid.cylinder", &json!({"radius": 25.6, "height": 24, "base": [0, 0, 22], "operation": "intersect", "targets": ["Rod"]})).unwrap();
+    let state = s.model.state();
+    let rod = &state.body("Rod").unwrap().body;
+    let expected = std::f64::consts::PI * 25.6 * 25.6 * 8.0;
+    assert!((volume(&s, "Rod") - expected).abs() < expected * 1e-4, "{} expected {expected}", volume(&s, "Rod"));
+    let round = (0..rod.face_count())
+        .filter(|&i| matches!(solidcraft_kernel::face_surface(rod, i), Some(solidcraft_kernel::FaceSurface::Cylinder { .. })))
+        .count();
+    assert!(round >= 1 && rod.face_count() <= 6, "{} faces, {round} round", rod.face_count());
+}

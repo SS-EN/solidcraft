@@ -194,6 +194,10 @@ fixes below (sound face pushes, no panics in the boolean's final assembly).
   attempt failed on.
 - **Booleans on bodies in several pieces** (a join that left two lumps): when the whole fails
   or comes out empty, a piece at a time.
+- **Intersections of bodies with walls on one cylinder** (two rods of one radius on one axis
+  that overlap, a ring sector on a tube's walls, #1865): the general boolean can't intersect
+  walls lying on each other, and failed after seconds of retries. A cut can, so the
+  intersection is taken as `a − (a − b)`: exact round walls, no facets.
 - **Pushing a face apart** (coincident faces) checks its result: the exact rebuild could leave a
   cylinder unsound, and then the general offset is used. A boss standing on a plate joins again.
 - **No panics in the boolean's final assembly.** Natively a panic inside the kernel is caught,
