@@ -1428,6 +1428,15 @@ where
     // a hole). Asked before faces are pushed apart: that doesn't part walls on one cylinder, and
     // its tries at the general boolean, all failing on those walls, cost seconds.
     if op == BoolOp::Union && !BORES.with(|c| c.get()) && crate::coplanar::has_coincident_cylinders(a, b) {
+        // Bodies that also touch back to back (a plug filling a notch, its screw holes going on
+        // from the counterbores behind it) are glued along the contact's outline first, as further
+        // down: exact, and a fraction of what narrowing a bore and cutting it again costs.
+        if crate::coplanar::faces_touch(a, b) {
+            let accept = |body: &Body| check(body).0 && !unfused(body) && crate::boolean_guard::check_retry(a, b, op, Some(body)).is_ok();
+            if let Some(body) = crate::outline::outline_union(a, b, &accept) {
+                return Ok(Some(body));
+            }
+        }
         BORES.with(|c| c.set(true));
         let (r, diagnostics) = capture_boolean_diagnostics(|| crate::coplanar::bore_union(a, b, &|body| check(body).0));
         BORES.with(|c| c.set(false));
