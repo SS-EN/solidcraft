@@ -573,64 +573,6 @@ pub enum ParamUser {
     Canvas { canvas: u64, name: String, input: String },
 }
 
-/// The expressions of a sheet metal rule, by field.
-fn sheet_rule_exprs(r: &crate::sheet::SheetRule) -> [(&'static str, &String); 8] {
-    [
-        ("thickness", &r.thickness),
-        ("k_factor", &r.k_factor),
-        ("bend_radius", &r.bend_radius),
-        ("relief_width", &r.relief_width),
-        ("relief_depth", &r.relief_depth),
-        ("corner_relief", &r.corner_relief),
-        ("hem_gap", &r.hem_gap),
-        ("gap", &r.gap),
-    ]
-}
-
-fn sheet_rule_exprs_mut(r: &mut crate::sheet::SheetRule) -> [(&'static str, &mut String); 8] {
-    [
-        ("thickness", &mut r.thickness),
-        ("k_factor", &mut r.k_factor),
-        ("bend_radius", &mut r.bend_radius),
-        ("relief_width", &mut r.relief_width),
-        ("relief_depth", &mut r.relief_depth),
-        ("corner_relief", &mut r.corner_relief),
-        ("hem_gap", &mut r.hem_gap),
-        ("gap", &mut r.gap),
-    ]
-}
-
-/// The expressions of a plastic rule, by field.
-fn plastic_rule_exprs(r: &crate::plastic::PlasticRule) -> [(&'static str, &String); 10] {
-    [
-        ("thickness", &r.thickness),
-        ("nominal_radius", &r.nominal_radius),
-        ("clearance", &r.clearance),
-        ("knife_edge", &r.knife_edge),
-        ("reveal_height", &r.reveal_height),
-        ("thickness_variation", &r.thickness_variation),
-        ("draft", &r.draft),
-        ("max_thickness", &r.max_thickness),
-        ("min_thickness", &r.min_thickness),
-        ("min_draft", &r.min_draft),
-    ]
-}
-
-fn plastic_rule_exprs_mut(r: &mut crate::plastic::PlasticRule) -> [(&'static str, &mut String); 10] {
-    [
-        ("thickness", &mut r.thickness),
-        ("nominal_radius", &mut r.nominal_radius),
-        ("clearance", &mut r.clearance),
-        ("knife_edge", &mut r.knife_edge),
-        ("reveal_height", &mut r.reveal_height),
-        ("thickness_variation", &mut r.thickness_variation),
-        ("draft", &mut r.draft),
-        ("max_thickness", &mut r.max_thickness),
-        ("min_thickness", &mut r.min_thickness),
-        ("min_draft", &mut r.min_draft),
-    ]
-}
-
 impl ParamUser {
     pub fn describe(&self) -> String {
         match self {
@@ -773,12 +715,12 @@ impl Document {
         }
         let uses = |e: &str| expr::references(e).iter().any(|r| r == name);
         for r in &self.sheet.rules {
-            for (field, _) in sheet_rule_exprs(r).into_iter().filter(|(_, e)| uses(e)) {
+            for (field, _, _) in r.fields().into_iter().filter(|(_, e, _)| uses(e)) {
                 out.push(ParamUser::Rule { kind: "sheet metal".into(), name: r.name.clone(), field: field.into() });
             }
         }
         for r in &self.plastic.rules {
-            for (field, _) in plastic_rule_exprs(r).into_iter().filter(|(_, e)| uses(e)) {
+            for (field, _, _) in r.fields().into_iter().filter(|(_, e, _)| uses(e)) {
                 out.push(ParamUser::Rule { kind: "plastic".into(), name: r.name.clone(), field: field.into() });
             }
         }
@@ -901,7 +843,7 @@ impl Document {
             }
         }
         // Sheet metal and plastic rules and canvas planes hold expressions too (#4420).
-        let rules = self.sheet.rules.iter_mut().flat_map(sheet_rule_exprs_mut).chain(self.plastic.rules.iter_mut().flat_map(plastic_rule_exprs_mut));
+        let rules = self.sheet.rules.iter_mut().flat_map(|r| r.fields_mut()).chain(self.plastic.rules.iter_mut().flat_map(|r| r.fields_mut()));
         for (_, e) in rules {
             let r = expr::rename_reference(e, old, new);
             if r != *e {
@@ -954,6 +896,13 @@ impl Document {
                 names.extend(sketch.constraints.iter().filter_map(|c| c.param.clone()));
                 names.extend(sketch.text_exprs().into_iter().flat_map(|(_, e)| expr::references(e)));
             }
+            // Sheet metal and plastic features rebuild when their rules' parameters change (#4420).
+            if f.kind.is_sheet() {
+                names.extend(self.sheet.rules.iter().flat_map(|r| r.fields()).flat_map(|(_, e, _)| expr::references(e)));
+            }
+            if f.kind.is_plastic() {
+                names.extend(self.plastic.rules.iter().flat_map(|r| r.fields()).flat_map(|(_, e, _)| expr::references(e)));
+            }
             out.extend(names.into_iter().map(|n| (format!("Feature:{}", f.name), n)));
         }
         out
@@ -974,9 +923,15 @@ impl Document {
                 break;
             }
         }
+        // A rule that uses it changes every sheet metal (or plastic) feature: the evaluation
+        // hashes the rules into their fingerprint.
+        let uses = |e: &String| expr::references(e).iter().any(|r| affected.contains(r));
+        let sheet = self.sheet.rules.iter().any(|r| r.fields().iter().any(|(_, e, _)| uses(e)));
+        let plastic = self.plastic.rules.iter().any(|r| r.fields().iter().any(|(_, e, _)| uses(e)));
         let mut out = Vec::new();
         for f in &self.features {
             let mut hit = f.param_names.iter().any(|n| affected.contains(n));
+            hit |= (sheet && f.kind.is_sheet()) || (plastic && f.kind.is_plastic());
             hit |= f.kind.expressions().iter().any(|e| expr::references(e).iter().any(|r| affected.contains(r)));
             if let FeatureKind::Sketch { sketch, .. } = &f.kind {
                 hit |= sketch.constraints.iter().any(|c| c.param.as_ref().is_some_and(|p| affected.contains(p)));

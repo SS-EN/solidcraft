@@ -218,6 +218,17 @@ fn rules_and_canvases_follow_a_renamed_parameter() {
     assert_eq!(users(&mut s, "lift"), ["canvas"]);
     let e = err(&mut s, "parameters.delete", json!({"name": "taper"}));
     assert!(e.contains("plastic rule Housing (draft)"), "{e}");
+    // The sheet metal features rebuild when a rule's parameter changes, so they are what it drives.
+    let u = run(&mut s, "parameters.users", json!({"name": "gauge"}));
+    assert_eq!(u["drives"].as_array().map(|d| d.iter().map(|x| x["name"].clone()).collect::<Vec<_>>()), Some(vec![json!("ConvertToSheetMetal1")]), "{u}");
+    let g = run(&mut s, "parameters.graph", json!({}));
+    assert!(g["edges"].as_array().unwrap().iter().any(|e| e[0] == "Feature:ConvertToSheetMetal1" && e[1] == "gauge"), "{g}");
+    assert!(!g["edges"].as_array().unwrap().iter().any(|e| e[0] == "Feature:Box1" && e[1] == "gauge"), "{g}");
+    // Every field of the shared list follows: `gap` was set through `sheet.manage_rules` too.
+    run(&mut s, "parameters.add", json!({"name": "seam", "expression": "0.5 mm"}));
+    run(&mut s, "sheet.manage_rules", json!({"name": "Steel", "gap": "seam"}));
+    run(&mut s, "parameters.rename", json!({"name": "seam", "new_name": "joint_gap"}));
+    assert_eq!(s.doc.sheet.rules[0].gap, "joint_gap");
     for (old, new) in [("gauge", "sheet_t"), ("lift", "raise"), ("taper", "draft_angle")] {
         run(&mut s, "parameters.rename", json!({"name": old, "new_name": new}));
     }
