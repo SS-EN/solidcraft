@@ -1,0 +1,1 @@
+[{"command":"joint.drive","params":{"joint":"Hinge","value":33}},{"command":"joint.reach","params":{"occurrence":"Arm:1","point":[30,40,10],"quiet":true,"continuous":true}}]
