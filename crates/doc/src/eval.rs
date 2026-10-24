@@ -1190,12 +1190,7 @@ fn context_digest(doc: &Document, vals: &BTreeMap<String, Value>) -> u64 {
     serde_json::to_string(&doc.plastic).unwrap_or_default().hash(&mut h);
     serde_json::to_string(&doc.components).unwrap_or_default().hash(&mut h);
     serde_json::to_string(&doc.body_components).unwrap_or_default().hash(&mut h);
-    for e in doc
-        .sheet
-        .rules
-        .iter()
-        .flat_map(|r| r.fields().map(|(_, e, _)| e))
-    {
+    for e in doc.sheet.rules.iter().flat_map(|r| r.fields().map(|(_, e, _)| e)) {
         for n in expr::references(e) {
             vals.get(&n).map(|v| v.v.to_bits()).hash(&mut h);
         }

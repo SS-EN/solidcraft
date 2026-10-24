@@ -220,7 +220,11 @@ fn rules_and_canvases_follow_a_renamed_parameter() {
     assert!(e.contains("plastic rule Housing (draft)"), "{e}");
     // The sheet metal features rebuild when a rule's parameter changes, so they are what it drives.
     let u = run(&mut s, "parameters.users", json!({"name": "gauge"}));
-    assert_eq!(u["drives"].as_array().map(|d| d.iter().map(|x| x["name"].clone()).collect::<Vec<_>>()), Some(vec![json!("ConvertToSheetMetal1")]), "{u}");
+    assert_eq!(
+        u["drives"].as_array().map(|d| d.iter().map(|x| x["name"].clone()).collect::<Vec<_>>()),
+        Some(vec![json!("ConvertToSheetMetal1")]),
+        "{u}"
+    );
     let g = run(&mut s, "parameters.graph", json!({}));
     assert!(g["edges"].as_array().unwrap().iter().any(|e| e[0] == "Feature:ConvertToSheetMetal1" && e[1] == "gauge"), "{g}");
     assert!(!g["edges"].as_array().unwrap().iter().any(|e| e[0] == "Feature:Box1" && e[1] == "gauge"), "{g}");
