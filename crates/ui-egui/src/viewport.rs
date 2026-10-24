@@ -3479,7 +3479,6 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::select_other::show(app, ui.ctx());
     axis_view(app, ui, rect);
     nav_bar(app, ui, rect);
-    agent_chip(app, ui, overlay_rect);
     transient_messages(app, ui, rect);
 }
 
@@ -3504,18 +3503,20 @@ fn paint_box_selection(painter: &egui::Painter, bx: BoxSel, sketch: bool) {
 }
 
 /// An agent's command computing off the window thread (#1989): which one, in the agent cursor's
-/// colour, and a button that stops waiting for it.
-fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, rect: Rect) {
+/// colour, and a button that stops waiting for it. Centred at the bottom of `free`, which is the
+/// space above the status and "Computing" toasts.
+fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, free: Rect) {
     let t = Tokens::get();
     let painter = ui.painter().clone();
-    if let Some((since, label)) = app.agent_computing().map(|(since, label)| (since, label.to_string())) {
+    if let Some((since, label)) = app.agent_computing() {
         let seconds = ((crate::now_ms() - since) / 1000.0).floor().max(0.0);
         let computing = crate::i18n::format("dialog.computing", &[("seconds", &format!("{seconds:.0}"))]);
-        let above = if app.computing_since().is_some() { 106.0 } else { 76.0 };
-        let pos = pos2(rect.left() + 12.0, rect.bottom() - above);
         let galley = painter.layout_no_wrap(format!("{label} · {computing}"), FontId::proportional(t.font_label), t.text);
         let stop = painter.layout_no_wrap(crate::i18n::tr("ui.agent_chat_stop").to_string(), FontId::proportional(t.font_label), t.text);
-        let r = Rect::from_min_size(pos, vec2(galley.size().x + stop.size().x + 54.0, galley.size().y.max(stop.size().y) + 8.0));
+        let size = vec2(galley.size().x + stop.size().x + 54.0, galley.size().y.max(stop.size().y) + 8.0);
+        let pos = pos2(free.center().x - size.x * 0.5, free.bottom() - size.y);
+        let r = Rect::from_min_size(pos, size);
+        crate::scenario::publish_rect("agent:chip", r);
         painter.rect_filled(r, t.radius_sm, t.overlay);
         painter.rect_stroke(r, t.radius_sm, Stroke::new(1.0, crate::icons::pointer::agent()), egui::StrokeKind::Inside);
         egui::Spinner::new()
@@ -3540,7 +3541,7 @@ const STATUS_TOAST_MS: f64 = 6000.0;
 
 /// A single visual pattern for ongoing work and the existing six-second status.
 fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) {
-    if app.status.is_none() && app.computing_since().is_none() {
+    if app.status.is_none() && app.computing_since().is_none() && app.agent_computing().is_none() {
         return;
     }
     let t = Tokens::get();
@@ -3580,12 +3581,14 @@ fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) {
         let text = crate::i18n::format("dialog.computing", &[("seconds", &format!("{seconds:.0}"))]);
         if let Some(r) = paint_toast(ui, free, text, false, true) {
             crate::scenario::publish_rect("toast:computing", r);
+            free.max.y = r.top() - t.space_8;
             if app.status.is_none() {
                 crate::scenario::publish_rect("toast", r);
             }
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
+    agent_chip(app, ui, free);
 }
 
 fn paint_toast(ui: &egui::Ui, free: Rect, text: String, error: bool, computing: bool) -> Option<Rect> {
