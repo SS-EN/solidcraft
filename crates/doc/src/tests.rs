@@ -103,6 +103,40 @@ fn set_back_reports_restored_features() {
     assert_eq!((m.last_recomputed, m.last_restored), (0, 0));
 }
 
+/// Setting a parameter back restores every feature on a design whose states are large next to
+/// the cache's budget: each cached state shares the bodies it did not change with the states
+/// before it, so it is charged only for what it made, not for the whole model again.
+#[test]
+fn set_back_restores_everything_when_states_share_bodies() {
+    let mut doc = Document::new("blocks");
+    doc.set_param("h", "10 mm", Some("mm"), None).unwrap();
+    for i in 0..30 {
+        let height = if i == 0 { "h" } else { "10" };
+        doc.add_feature(
+            FeatureKind::Box {
+                corner: point_expr(Vec3::new(20.0 * i as f64, 0.0, 0.0)),
+                length: "10".into(),
+                width: "10".into(),
+                height: height.into(),
+                operation: Operation::NewBody,
+            },
+            None,
+        )
+        .unwrap();
+    }
+    let mut m = Model::new();
+    m.evaluate(&doc);
+    // Room for a few whole models: enough for both timelines' new bodies, not for every state
+    // charged as a whole model.
+    m.cache.lock().unwrap().budget = 3 * m.state().retained_bytes();
+    doc.set_param("h", "12 mm", None, None).unwrap();
+    m.evaluate(&doc);
+    assert_eq!(m.last_recomputed, 30);
+    doc.set_param("h", "10 mm", None, None).unwrap();
+    m.evaluate(&doc);
+    assert_eq!((m.last_recomputed, m.last_restored), (0, 30));
+}
+
 /// #1989: what an evaluation ahead on a copy of the model computed is kept for the run that
 /// follows on the model itself, which finds it there even once the evaluation cache has dropped
 /// it (the cache keeps only a few states of a design with large bodies). Copies keep nothing.

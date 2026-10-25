@@ -943,6 +943,8 @@ pub struct EvalCache {
     order: std::collections::VecDeque<u64>,
     /// What the stored results cost together.
     bytes: usize,
+    /// The byte budget (0: [`CACHE_BYTES`]).
+    pub(crate) budget: usize,
     pub hits: usize,
 }
 
@@ -984,7 +986,8 @@ impl EvalCache {
         self.bytes = self.bytes.saturating_add(bytes);
         // One result is always kept, so a single state larger than the budget cannot empty the
         // cache and force a full recompute on every undo.
-        while self.order.len() > CACHE_ENTRIES || (self.bytes > CACHE_BYTES && self.order.len() > 1) {
+        let budget = if self.budget == 0 { CACHE_BYTES } else { self.budget };
+        while self.order.len() > CACHE_ENTRIES || (self.bytes > budget && self.order.len() > 1) {
             if let Some(k) = self.order.pop_front()
                 && let Some(old) = self.map.remove(&k)
             {
@@ -1083,6 +1086,22 @@ impl ModelState {
     pub fn retained_bytes(&self) -> usize {
         let bodies: usize = self.bodies.iter().map(|b| if b.bytes > 0 { b.bytes } else { b.body.retained_bytes() }).sum();
         let sketches: usize = self.sketches.iter().map(|s| s.retained_bytes()).sum();
+        bodies + sketches + self.sheets.len() * 4096 + self.threads.len() * 192 + self.construct.len() * 192
+    }
+
+    /// [`ModelState::retained_bytes`] of what this state holds that `before` does not: bodies
+    /// and sketches it shares with `before` are already paid for by the cached state that made
+    /// them. Charging every cached state its whole model let a design whose model is large next
+    /// to the budget keep only its last few states, so setting a parameter back recomputed what
+    /// had dropped out.
+    fn added_bytes(&self, before: &ModelState) -> usize {
+        let bodies: usize = self
+            .bodies
+            .iter()
+            .filter(|b| !before.bodies.iter().any(|o| o.body.same_shape(&b.body)))
+            .map(|b| if b.bytes > 0 { b.bytes } else { b.body.retained_bytes() })
+            .sum();
+        let sketches: usize = self.sketches.iter().filter(|s| !before.sketches.iter().any(|o| Arc::ptr_eq(o, s))).map(|s| s.retained_bytes()).sum();
         bodies + sketches + self.sheets.len() * 4096 + self.threads.len() * 192 + self.construct.len() * 192
     }
 
@@ -2032,6 +2051,7 @@ impl Model {
                 continue;
             }
             recomputed += 1;
+            let before = state.clone();
             let t0 = now();
             let mut next = (*state).clone();
             // The names the design must not use again travel with the state (#4957, #4302).
@@ -2158,7 +2178,7 @@ impl Model {
                     warning: warning.clone(),
                     boolean_diagnostics: boolean_diagnostics.clone(),
                     ms,
-                    bytes: state.retained_bytes(),
+                    bytes: state.added_bytes(&before),
                     state: state.clone(),
                 };
                 if let Some(k) = &self.kept.0 {
