@@ -90,7 +90,8 @@ fn table(id: &str) -> &'static [(&'static str, K)] {
         "sketch.project_to_surface" | "sketch.isoparametric_curve" => &[("face", Here)],
         "sketch.intersection_curve" => &[("a", Here), ("b", Here)],
         "inspect.curvature_comb" | "inspect.minimum_radius" | "inspect.isocurve" => &[("edges", Picks), ("faces", Picks)],
-        "parts.insert" | "parts.fastener" => &[("at", Picks), ("point", Make), ("direction", Dir)],
+        // `at` stays in world coordinates: `parts.insert` maps it into the hole's occurrence itself.
+        "parts.insert" | "parts.fastener" => &[("point", Make), ("direction", Dir)],
         "appearance.assign" => &[("faces", Picks), ("bodies", Body), ("body", Body)],
         "solid.move" => &[("bodies", Body), ("translate", Delta), ("axis", Dir), ("origin", Moved)],
         "solid.combine" => &[("target", Body), ("tools", Body)],

@@ -541,8 +541,13 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     let mut holes = Vec::new();
     let mut seats: Vec<(u64, Vec3)> = Vec::new();
     for a in hole_picks(p, cmd)? {
-        let (a, seat) = hole_wall(s, a).unwrap_or((a, a));
+        // `at` is in world coordinates, as `joint.create` takes it; the hole's wall is found on
+        // the host's own (unplaced) bodies, so the pick goes into the host's frame for that and
+        // the wall point comes back out to world.
         let host = super::joints::occurrence_at(s, a).ok_or_else(|| bad(cmd, "no body at `at` (pick a hole's rim or wall)"))?;
+        let t = if host == 0 { solidcraft_doc::IDENTITY } else { solidcraft_doc::joints::occurrence_world(&s.doc, host) };
+        let local = solidcraft_doc::mat_inverse(&t).map_or(a, |inv| solidcraft_doc::apply_point(&inv, a));
+        let (a, seat) = hole_wall(s, local).map_or((a, local), |(q, seat)| (solidcraft_doc::apply_point(&t, q), seat));
         // A rim is drawn as more than one edge, and one click on it picks them all: the picks
         // of one rim seat one part.
         if seats.iter().any(|(h, q)| *h == host && (*q - seat).len() < 1e-3) {
@@ -857,6 +862,24 @@ mod tests {
         let (lo, hi) = bbox(&s, "SHCS M8x25");
         assert!((hi.z - 18.0).abs() < 1e-6 && (lo.z + 15.0).abs() < 1e-6, "{lo:?} {hi:?}");
         assert!(s.model.state().threads.iter().any(|t| t.designation == "M8" && (t.pitch - 1.25).abs() < 1e-9));
+    }
+
+    /// `at` is a world point: a hole in a part that has been moved seats the screw where the
+    /// hole is, picked on its rim or its wall.
+    #[test]
+    fn a_screw_seats_in_a_hole_of_a_moved_part() {
+        for at in [[40.0, 11.7, 5.0], [40.0, 11.7, 2.5]] {
+            let mut s = Session::default();
+            let c = run(&mut s, "component.create", json!({"name": "Plate", "parent": 0, "grounded": false}));
+            run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 5, "corner": [0, 0, 0]}));
+            run(&mut s, "solid.cylinder", json!({"radius": 1.7, "height": 7, "base": [10, 10, -1], "operation": "cut"}));
+            run(&mut s, "component.activate", json!({"component": 0}));
+            run(&mut s, "occurrence.move", json!({"occurrence": c["occurrence"], "translate": [30, 0, 0]}));
+            let r = run(&mut s, "parts.insert", json!({"family": "socket_head_cap_screw", "size": "M3", "length": 8, "at": at}));
+            assert!(r["joint"].is_number(), "{at:?}: {r}");
+            let (lo, hi) = bbox(&s, "SHCS M3x8");
+            assert!(((lo.x + hi.x) / 2.0 - 40.0).abs() < 1e-6 && ((lo.y + hi.y) / 2.0 - 10.0).abs() < 1e-6, "{at:?}: {lo:?} {hi:?}");
+        }
     }
 
     /// Several holes in one insert: one component placed and seated once per hole, in one undo
